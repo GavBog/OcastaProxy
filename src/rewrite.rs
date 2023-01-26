@@ -59,26 +59,43 @@ pub fn html(page: String, url: reqwest::Url, encoding: String) -> String {
                     el.remove();
                     Ok(())
                 }),
-                // Todo: replace all src, href, action, srcset, onclick, etc. regardless of the tag. ("[href]" instead of "a[href]")
-                element!("a[href]", |el| {
-                    let mut href = el.get_attribute("href").unwrap();
-                    href = get_url(href, origin.clone(), encoding.clone());
-
-                    el.set_attribute("href", &href)?;
+                element!("[integrity]", |el| {
+                    el.remove_attribute("integrity");
                     Ok(())
                 }),
-                element!("link[href]", |el| {
-                    let mut href = el.get_attribute("href").unwrap();
-                    href = format!("{}{}", origin, href);
-
-                    el.set_attribute("href", &href)?;
+                element!("[nonce]", |el| {
+                    el.remove_attribute("nonce");
                     Ok(())
                 }),
-                element!("form[action]", |el| {
-                    let mut href = el.get_attribute("action").unwrap();
-                    href = get_url(href, origin.clone(), encoding.clone());
+                element!("[src], [href], [action]", |el| {
+                    let mut attribute = el.get_attribute("src").unwrap_or_default();
+                    if attribute.is_empty() {
+                        attribute = el.get_attribute("href").unwrap_or_default();
+                    }
+                    if attribute.is_empty() {
+                        attribute = el.get_attribute("action").unwrap_or_default();
+                    }
 
-                    el.set_attribute("action", &href)?;
+                    let attribute = get_url(attribute, origin.clone(), encoding.clone());
+
+                    el.set_attribute("src", attribute.as_str()).unwrap();
+                    el.set_attribute("href", attribute.as_str()).unwrap();
+                    el.set_attribute("action", attribute.as_str()).unwrap();
+
+                    Ok(())
+                }),
+                element!("[srcset]", |el| {
+                    let attribute = el.get_attribute("srcset").unwrap_or_default();
+                    let mut new_attribute = String::new();
+
+                    for url in attribute.split(",") {
+                        let url = url.trim();
+                        let url = get_url(url.to_string(), origin.clone(), encoding.clone());
+                        new_attribute.push_str(&format!("{}, ", url));
+                    }
+
+                    el.set_attribute("srcset", new_attribute.as_str()).unwrap();
+
                     Ok(())
                 }),
             ],

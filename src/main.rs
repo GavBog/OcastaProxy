@@ -67,6 +67,14 @@ async fn proxy(
         .clone();
     let mut headers = reqwest::header::HeaderMap::new();
     headers.insert(reqwest::header::USER_AGENT, client_agent);
+    headers.insert(
+        reqwest::header::ORIGIN,
+        reqwest::header::HeaderValue::from_str(url.origin().ascii_serialization().as_str())?,
+    );
+    headers.insert(
+        reqwest::header::REFERER,
+        reqwest::header::HeaderValue::from_str(url.as_str())?,
+    );
     let page = reqwest::Client::new()
         .get(new_url)
         .headers(headers)
