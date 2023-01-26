@@ -1,4 +1,4 @@
-use actix_web::{get, web, App, HttpResponse, HttpServer, Responder};
+use actix_web::{get, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use base64::{decode, encode};
 use ocastaproxy::rewrite;
 use serde::Deserialize;
@@ -46,6 +46,7 @@ async fn gateway(data: web::Query<FormData>, path: web::Path<String>) -> impl Re
 async fn proxy(
     path: web::Path<UrlData>,
     query: web::Query<ProxyData>,
+    req: HttpRequest,
 ) -> Result<impl Responder, Box<dyn std::error::Error>> {
     let query = query
         .query
@@ -59,7 +60,20 @@ async fn proxy(
     };
     let url = reqwest::Url::parse(&String::from_utf8(url)?)?;
     let new_url = reqwest::Url::parse(&format!("{}?{}", url, query))?;
-    let page = reqwest::get(new_url.as_ref()).await?.text().await?;
+    let client_agent = req
+        .headers()
+        .get("User-Agent")
+        .unwrap_or(&"".parse().unwrap())
+        .clone();
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(reqwest::header::USER_AGENT, client_agent);
+    let page = reqwest::Client::new()
+        .get(new_url)
+        .headers(headers)
+        .send()
+        .await?
+        .text()
+        .await?;
     let new_page = rewrite::html(page, url, path.encoding.clone());
 
     return Ok(HttpResponse::Ok()
@@ -75,7 +89,7 @@ async fn main() -> std::io::Result<()> {
             .service(gateway)
             .service(proxy)
     })
-    .bind(("0.0.0.0", 8080))?
+    .bind(("0.0.0.0", 8081))?
     .run()
     .await
 }
