@@ -75,18 +75,17 @@ async fn proxy(
         reqwest::header::REFERER,
         reqwest::header::HeaderValue::from_str(url.as_str())?,
     );
-    let page = reqwest::Client::new()
-        .get(new_url)
-        .headers(headers)
-        .send()
-        .await?
-        .text()
-        .await?;
+    let client = reqwest::Client::new();
+    let response = client.get(new_url).headers(headers).send().await?;
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .unwrap_or(&"".parse().unwrap())
+        .clone();
+    let page = response.text().await?;
     let new_page = rewrite::html(page, url, path.encoding.clone());
 
-    return Ok(HttpResponse::Ok()
-        .content_type("text/html; charset=utf-8")
-        .body(new_page));
+    return Ok(HttpResponse::Ok().content_type(content_type).body(new_page));
 }
 
 #[actix_web::main]
