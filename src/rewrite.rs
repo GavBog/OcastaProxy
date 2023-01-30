@@ -68,22 +68,22 @@ fn rewritecss(text: String, encoding: String, origin: String) -> String {
 fn rewritejs(url: reqwest::Url, text: String) -> String {
     let mut text = text.as_str().to_string();
 
-    // if url
-    //     .to_string()
-    //     .starts_with("https://www.googletagmanager.com/gtm.js")
-    // {
-    //     text = text.replace("t.location", "t.$Ocasta.location");
-    // }
+    if url
+        .to_string()
+        .starts_with("https://www.googletagmanager.com/gtm.js")
+    {
+        text = text.replace("t.location", "t.$Ocasta.location");
+    }
 
-    // // replace window.location and document.location with proxy location
-    // let re = Regex::new(r"(,| |=|\()(window.location|document.location)(,| |=|\)|\.)").unwrap();
-    // text = re
-    //     .replace_all(&text, |caps: &regex::Captures| {
-    //         let mut text = caps.get(0).unwrap().as_str().to_string();
-    //         text = text.replace(".location", ".$Ocasta.location");
-    //         text
-    //     })
-    //     .to_string();
+    // replace window.location and document.location with proxy location
+    let re = Regex::new(r"(,| |=|\()(window.location|document.location)(,| |=|\)|\.)").unwrap();
+    text = re
+        .replace_all(&text, |caps: &regex::Captures| {
+            let mut text = caps.get(0).unwrap().as_str().to_string();
+            text = text.replace(".location", ".$Ocasta.location");
+            text
+        })
+        .to_string();
 
     return text;
 }
