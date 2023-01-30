@@ -9,6 +9,7 @@ fn get_url(el: String, origin: String, encoding: String) -> String {
         || attribute.starts_with("about:")
         || attribute.starts_with("javascript:")
         || attribute.starts_with("blob:")
+        || attribute.starts_with("mailto:")
     {
         return attribute;
     } else if attribute.starts_with("./") {
@@ -93,6 +94,22 @@ fn html(page: String, url: reqwest::Url, encoding: String, origin: String) -> St
     let mut rewriter = HtmlRewriter::new(
         Settings {
             element_content_handlers: vec![
+                // element!("head", |el| {
+                //     let script = format!(
+                //         r#"<script type="text/javascript">window.$Ocasta = {{location: {{}}}}; window.$Ocasta.location = {{hash: "{0}", host: "{1}", hostname: "{1}:{5}", href: "{2}", origin: "{3}", pathname: "{4}", port: "{5}", protocol: "{6}", search: "{7}"}}; document.$Ocasta = {{location: {{}}}}; document.$Ocasta.location = window.$Ocasta.location;</script>"#,
+                //         url.fragment().unwrap_or_default(),
+                //         url.host_str().unwrap_or_default(),
+                //         url,
+                //         origin,
+                //         url.path(),
+                //         url.port().unwrap_or(80),
+                //         url.scheme(),
+                //         url.query().unwrap_or_default(),
+                //     );
+
+                //     el.prepend(script.as_str(), ContentType::Html);
+                //     Ok(())
+                // }),
                 element!("base[href]", |el| {
                     // Temporary fix for base tag!
                     el.remove();
@@ -107,21 +124,25 @@ fn html(page: String, url: reqwest::Url, encoding: String, origin: String) -> St
                     Ok(())
                 }),
                 // URLs
-                element!("[src], [href], [action]", |el| {
-                    let mut attribute = el.get_attribute("src").unwrap_or_default();
-                    if attribute.is_empty() {
-                        attribute = el.get_attribute("href").unwrap_or_default();
-                    }
-                    if attribute.is_empty() {
-                        attribute = el.get_attribute("action").unwrap_or_default();
-                    }
-
+                element!("[src]", |el| {
+                    let attribute = el.get_attribute("src").unwrap_or_default();
                     let attribute = get_url(attribute, origin.clone(), encoding.clone());
 
                     el.set_attribute("src", attribute.as_str()).unwrap();
-                    el.set_attribute("href", attribute.as_str()).unwrap();
-                    el.set_attribute("action", attribute.as_str()).unwrap();
+                    Ok(())
+                }),
+                element!("[href]", |el| {
+                    let attribute = el.get_attribute("href").unwrap_or_default();
+                    let attribute = get_url(attribute, origin.clone(), encoding.clone());
 
+                    el.set_attribute("href", attribute.as_str()).unwrap();
+                    Ok(())
+                }),
+                element!("[action]", |el| {
+                    let attribute = el.get_attribute("action").unwrap_or_default();
+                    let attribute = get_url(attribute, origin.clone(), encoding.clone());
+
+                    el.set_attribute("action", attribute.as_str()).unwrap();
                     Ok(())
                 }),
                 element!("[srcset]", |el| {

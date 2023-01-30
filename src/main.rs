@@ -83,7 +83,7 @@ async fn proxy(
         .get("content-type")
         .unwrap_or(&"".parse().unwrap())
         .clone();
-    if content_type.to_str()?.contains("image") {
+    if content_type.to_str()?.starts_with("image/") {
         let bytes = response.bytes().await?;
         return Ok(HttpResponse::Ok().content_type(content_type).body(bytes));
     }
