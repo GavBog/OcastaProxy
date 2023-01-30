@@ -65,11 +65,12 @@ async fn proxy(
         .get("User-Agent")
         .unwrap_or(&"".parse().unwrap())
         .clone();
+    let origin = url.origin().ascii_serialization();
     let mut headers = reqwest::header::HeaderMap::new();
     headers.insert(reqwest::header::USER_AGENT, client_agent);
     headers.insert(
         reqwest::header::ORIGIN,
-        reqwest::header::HeaderValue::from_str(url.origin().ascii_serialization().as_str())?,
+        reqwest::header::HeaderValue::from_str(&origin)?,
     );
     headers.insert(
         reqwest::header::REFERER,
@@ -77,13 +78,23 @@ async fn proxy(
     );
     let client = reqwest::Client::new();
     let response = client.get(new_url).headers(headers).send().await?;
-    let content_type = response
-        .headers()
+    let response_headers = response.headers();
+    let content_type = response_headers
         .get("content-type")
         .unwrap_or(&"".parse().unwrap())
         .clone();
+    if content_type.to_str()?.contains("image") {
+        let bytes = response.bytes().await?;
+        return Ok(HttpResponse::Ok().content_type(content_type).body(bytes));
+    }
     let page = response.text().await?;
-    let new_page = rewrite::html(page, url, path.encoding.clone());
+    let new_page = rewrite::page(
+        page,
+        url,
+        path.encoding.clone(),
+        content_type.to_str()?.to_string(),
+        origin,
+    );
 
     return Ok(HttpResponse::Ok().content_type(content_type).body(new_page));
 }

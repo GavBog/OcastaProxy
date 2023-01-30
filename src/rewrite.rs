@@ -1,5 +1,6 @@
 use base64::encode;
-use lol_html::{element, HtmlRewriter, Settings};
+use lol_html::{element, html_content::ContentType, text, HtmlRewriter, Settings};
+use regex::Regex;
 
 fn get_url(el: String, origin: String, encoding: String) -> String {
     let mut attribute = el;
@@ -48,9 +49,47 @@ fn get_url(el: String, origin: String, encoding: String) -> String {
     return attribute;
 }
 
-pub fn html(page: String, url: reqwest::Url, encoding: String) -> String {
+fn rewritecss(text: String, encoding: String, origin: String) -> String {
+    let mut text = text;
+
+    // replace css url with proxy url
+    let re = Regex::new(r"url\((.*?)\)").unwrap();
+    text = re
+        .replace_all(&text, |caps: &regex::Captures| {
+            let url = caps.get(1).unwrap().as_str();
+            let url = get_url(url.to_string(), origin.clone(), encoding.clone());
+            format!("url({})", url)
+        })
+        .to_string();
+
+    return text;
+}
+
+fn rewritejs(url: reqwest::Url, text: String) -> String {
+    let mut text = text.as_str().to_string();
+
+    // if url
+    //     .to_string()
+    //     .starts_with("https://www.googletagmanager.com/gtm.js")
+    // {
+    //     text = text.replace("t.location", "t.$Ocasta.location");
+    // }
+
+    // // replace window.location and document.location with proxy location
+    // let re = Regex::new(r"(,| |=|\()(window.location|document.location)(,| |=|\)|\.)").unwrap();
+    // text = re
+    //     .replace_all(&text, |caps: &regex::Captures| {
+    //         let mut text = caps.get(0).unwrap().as_str().to_string();
+    //         text = text.replace(".location", ".$Ocasta.location");
+    //         text
+    //     })
+    //     .to_string();
+
+    return text;
+}
+
+fn html(page: String, url: reqwest::Url, encoding: String, origin: String) -> String {
     let mut output = vec![];
-    let origin = url.origin().ascii_serialization();
     let mut rewriter = HtmlRewriter::new(
         Settings {
             element_content_handlers: vec![
@@ -67,6 +106,7 @@ pub fn html(page: String, url: reqwest::Url, encoding: String) -> String {
                     el.remove_attribute("nonce");
                     Ok(())
                 }),
+                // URLs
                 element!("[src], [href], [action]", |el| {
                     let mut attribute = el.get_attribute("src").unwrap_or_default();
                     if attribute.is_empty() {
@@ -98,6 +138,36 @@ pub fn html(page: String, url: reqwest::Url, encoding: String) -> String {
 
                     Ok(())
                 }),
+                // CSS
+                text!("style", |t| {
+                    let text = t.as_str().to_string();
+                    let text = rewritecss(text, encoding.clone(), origin.clone());
+                    t.replace(text.as_str(), ContentType::Html);
+
+                    Ok(())
+                }),
+                element!("[style]", |el| {
+                    let attribute = el.get_attribute("style").unwrap_or_default();
+                    let attribute =
+                        rewritecss(attribute.to_string(), encoding.clone(), origin.clone());
+
+                    el.set_attribute("style", attribute.as_str()).unwrap();
+                    Ok(())
+                }),
+                // Javascript
+                element!("[onclick]", |el| {
+                    let attribute = el.get_attribute("onclick").unwrap_or_default();
+                    let attribute = rewritejs(url.clone(), attribute.to_string());
+                    el.set_attribute("onclick", attribute.as_str()).unwrap();
+
+                    Ok(())
+                }),
+                text!("script", |t| {
+                    let text = rewritejs(url.clone(), t.as_str().to_string());
+                    t.replace(text.as_str(), ContentType::Html);
+
+                    Ok(())
+                }),
             ],
             ..Settings::default()
         },
@@ -108,5 +178,25 @@ pub fn html(page: String, url: reqwest::Url, encoding: String) -> String {
     rewriter.end().unwrap();
 
     let page = String::from_utf8(output).unwrap();
+    return page;
+}
+
+pub fn page(
+    page: String,
+    url: reqwest::Url,
+    encoding: String,
+    content_type: String,
+    origin: String,
+) -> String {
+    if content_type.starts_with("text/html") {
+        return html(page, url, encoding, origin);
+    } else if content_type.starts_with("text/css") {
+        return rewritecss(page, encoding, origin);
+    } else if content_type.starts_with("text/javascript")
+        || content_type.starts_with("application/javascript")
+    {
+        return rewritejs(url, page);
+    }
+
     return page;
 }
