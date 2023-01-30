@@ -110,11 +110,6 @@ fn html(page: String, url: reqwest::Url, encoding: String, origin: String) -> St
                 //     el.prepend(script.as_str(), ContentType::Html);
                 //     Ok(())
                 // }),
-                element!("base[href]", |el| {
-                    // Temporary fix for base tag!
-                    el.remove();
-                    Ok(())
-                }),
                 element!("[integrity]", |el| {
                     el.remove_attribute("integrity");
                     Ok(())
