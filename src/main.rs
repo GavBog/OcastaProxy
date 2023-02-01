@@ -60,22 +60,28 @@ async fn proxy(
     };
     let url = reqwest::Url::parse(&String::from_utf8(url)?)?;
     let new_url = reqwest::Url::parse(&format!("{}?{}", url, query))?;
-    let client_agent = req
-        .headers()
-        .get("User-Agent")
-        .unwrap_or(&"".parse().unwrap())
-        .clone();
     let origin = url.origin().ascii_serialization();
     let mut headers = reqwest::header::HeaderMap::new();
-    headers.insert(reqwest::header::USER_AGENT, client_agent);
-    headers.insert(
-        reqwest::header::ORIGIN,
-        reqwest::header::HeaderValue::from_str(&origin)?,
-    );
-    headers.insert(
-        reqwest::header::REFERER,
-        reqwest::header::HeaderValue::from_str(url.as_str())?,
-    );
+    for (key, value) in req.headers().iter() {
+        match key.as_str() {
+            "host" | "accept-encoding" => {}
+            "origin" => {
+                headers.insert(
+                    key.clone(),
+                    reqwest::header::HeaderValue::from_str(&origin)?,
+                );
+            }
+            "referrer" => {
+                headers.insert(
+                    key.clone(),
+                    reqwest::header::HeaderValue::from_str(url.as_str())?,
+                );
+            }
+            _ => {
+                headers.insert(key.clone(), value.clone());
+            }
+        }
+    }
     let client = reqwest::Client::new();
     let response = client.get(new_url).headers(headers).send().await?;
     let response_headers = response.headers();

@@ -94,22 +94,32 @@ fn html(page: String, url: reqwest::Url, encoding: String, origin: String) -> St
     let mut rewriter = HtmlRewriter::new(
         Settings {
             element_content_handlers: vec![
-                // element!("head", |el| {
-                //     let script = format!(
-                //         r#"<script type="text/javascript">window.$Ocasta = {{location: {{}}}}; window.$Ocasta.location = {{hash: "{0}", host: "{1}", hostname: "{1}:{5}", href: "{2}", origin: "{3}", pathname: "{4}", port: "{5}", protocol: "{6}", search: "{7}"}}; document.$Ocasta = {{location: {{}}}}; document.$Ocasta.location = window.$Ocasta.location;</script>"#,
-                //         url.fragment().unwrap_or_default(),
-                //         url.host_str().unwrap_or_default(),
-                //         url,
-                //         origin,
-                //         url.path(),
-                //         url.port().unwrap_or(80),
-                //         url.scheme(),
-                //         url.query().unwrap_or_default(),
-                //     );
+                element!("head", |el| {
+                    // add proxy location to window and document
+                    let script = format!(
+                        r#"<script type="text/javascript">window.$Ocasta = {{location: {{}}}}; window.$Ocasta.location = {{hash: "{0}", host: "{1}", hostname: "{1}{2}", href: "{3}", origin: "{4}", pathname: "{5}", port: "{6}", protocol: "{7}", search: "{8}"}}; document.$Ocasta = {{location: {{}}}}; document.$Ocasta.location = window.$Ocasta.location;</script>"#,
+                        url.fragment().unwrap_or_default(),
+                        url.host_str().unwrap_or_default(),
+                        format!(":{}", url.port().unwrap_or(80)).replace(":80", ""),
+                        url,
+                        origin,
+                        url.path(),
+                        url.port().unwrap_or(80).to_string().replace("80", ""),
+                        url.scheme(),
+                        url.query().unwrap_or_default(),
+                    );
 
-                //     el.prepend(script.as_str(), ContentType::Html);
-                //     Ok(())
-                // }),
+                    el.prepend(script.as_str(), ContentType::Html);
+                    Ok(())
+                }),
+                // remove attributes that interfere with proxy
+                element!("[http-equiv]", |el| {
+                    let attribute = el.get_attribute("http-equiv").unwrap_or_default();
+                    if attribute.contains("content-security-policy") {
+                        el.remove();
+                    }
+                    Ok(())
+                }),
                 element!("[integrity]", |el| {
                     el.remove_attribute("integrity");
                     Ok(())
@@ -118,6 +128,12 @@ fn html(page: String, url: reqwest::Url, encoding: String, origin: String) -> St
                     el.remove_attribute("nonce");
                     Ok(())
                 }),
+                // Test
+                element!("[data-jsarwt]", |el| {
+                    el.remove_attribute("data-jsarwt");
+                    Ok(())
+                }),
+                // End Test
                 // URLs
                 element!("[src]", |el| {
                     let attribute = el.get_attribute("src").unwrap_or_default();
