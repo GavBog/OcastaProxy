@@ -61,17 +61,19 @@ async fn proxy(
     let url = reqwest::Url::parse(&String::from_utf8(url)?)?;
     let new_url = reqwest::Url::parse(&format!("{}?{}", url, query))?;
     let origin = url.origin().ascii_serialization();
+
+    // Headers
     let mut headers = reqwest::header::HeaderMap::new();
     for (key, value) in req.headers().iter() {
         match key.as_str() {
-            "host" | "accept-encoding" => {}
+            "host" | "accept-encoding" | "x-forwarded-for" => {}
             "origin" => {
                 headers.insert(
                     key.clone(),
                     reqwest::header::HeaderValue::from_str(&origin)?,
                 );
             }
-            "referrer" => {
+            "referer" => {
                 headers.insert(
                     key.clone(),
                     reqwest::header::HeaderValue::from_str(url.as_str())?,
@@ -82,6 +84,8 @@ async fn proxy(
             }
         }
     }
+
+    // Download
     let client = reqwest::Client::new();
     let response = client.get(new_url).headers(headers).send().await?;
     let response_headers = response.headers();
@@ -94,6 +98,8 @@ async fn proxy(
         return Ok(HttpResponse::Ok().content_type(content_type).body(bytes));
     }
     let page = response.text().await?;
+
+    // Rewrite
     let new_page = rewrite::page(
         page,
         url,
