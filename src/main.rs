@@ -66,7 +66,14 @@ async fn proxy(
     let mut headers = reqwest::header::HeaderMap::new();
     for (key, value) in req.headers().iter() {
         match key.as_str() {
-            "host" | "accept-encoding" | "x-forwarded-for" => {}
+            "host"
+            | "accept-encoding"
+            | "forwarded"
+            | "x-forwarded-for"
+            | "x-forwarded-host"
+            | "x-forwarded-proto"
+            | "x-real-ip"
+            | "x-envoy-external-address" => {}
             "origin" => {
                 headers.insert(
                     key.clone(),
@@ -115,6 +122,7 @@ async fn proxy(
 async fn main() -> std::io::Result<()> {
     HttpServer::new(|| {
         App::new()
+            .wrap(actix_web::middleware::Compress::default())
             .route("/", web::get().to(index))
             .service(gateway)
             .service(proxy)
