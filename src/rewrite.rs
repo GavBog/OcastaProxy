@@ -12,7 +12,9 @@ fn get_url(el: String, origin: String, encoding: String) -> String {
         || attribute.starts_with("mailto:")
     {
         return attribute;
-    } else if attribute.starts_with("./") {
+    }
+
+    if attribute.starts_with("./") {
         attribute = attribute[2..].to_string();
     }
 
@@ -95,21 +97,12 @@ fn html(page: String, url: reqwest::Url, encoding: String, origin: String) -> St
         Settings {
             element_content_handlers: vec![
                 element!("head", |el| {
-                    // add proxy location to window and document
-                    let script = format!(
-                        r#"<script type="text/javascript">window.$Ocasta = {{location: {{}}}}; window.$Ocasta.location = {{hash: "{0}", host: "{1}", hostname: "{1}{2}", href: "{3}", origin: "{4}", pathname: "{5}", port: "{6}", protocol: "{7}", search: "{8}"}}; document.$Ocasta = {{location: {{}}}}; document.$Ocasta.location = window.$Ocasta.location;</script>"#,
-                        url.fragment().unwrap_or_default(),
-                        url.host_str().unwrap_or_default(),
-                        format!(":{}", url.port().unwrap_or(80)).replace(":80", ""),
-                        url,
-                        origin,
-                        url.path(),
-                        url.port().unwrap_or(80).to_string().replace("80", ""),
-                        url.scheme(),
-                        url.query().unwrap_or_default(),
+                    el.prepend(
+                        format!("<script>{}</script>", include_str!("../static/client.js"))
+                            .as_str(),
+                        ContentType::Html,
                     );
 
-                    el.prepend(script.as_str(), ContentType::Html);
                     Ok(())
                 }),
                 // remove attributes that interfere with proxy
@@ -167,15 +160,14 @@ fn html(page: String, url: reqwest::Url, encoding: String, origin: String) -> St
                     }
 
                     el.set_attribute("srcset", new_attribute.as_str()).unwrap();
-
                     Ok(())
                 }),
                 // CSS
                 text!("style", |t| {
                     let text = t.as_str().to_string();
                     let text = rewritecss(text, encoding.clone(), origin.clone());
-                    t.replace(text.as_str(), ContentType::Html);
 
+                    t.replace(text.as_str(), ContentType::Html);
                     Ok(())
                 }),
                 element!("[style]", |el| {
@@ -190,8 +182,8 @@ fn html(page: String, url: reqwest::Url, encoding: String, origin: String) -> St
                 element!("[onclick]", |el| {
                     let attribute = el.get_attribute("onclick").unwrap_or_default();
                     let attribute = rewritejs(url.clone(), attribute.to_string());
-                    el.set_attribute("onclick", attribute.as_str()).unwrap();
 
+                    el.set_attribute("onclick", attribute.as_str()).unwrap();
                     Ok(())
                 }),
                 text!("script", |t| {
