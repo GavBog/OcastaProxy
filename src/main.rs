@@ -1,5 +1,6 @@
 use actix_web::{get, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use base64::{decode, encode};
+use libtor::{HiddenServiceVersion, Tor, TorAddress, TorFlag};
 use ocastaproxy::rewrite;
 use serde::Deserialize;
 
@@ -93,7 +94,17 @@ async fn proxy(
     }
 
     // Download
-    let client = reqwest::Client::new();
+    let mut client = reqwest::Client::new();
+    if path.encoding == "tor" {
+        let tor = reqwest::Proxy::https(format!("socks5://127.0.0.1:{}", 19_050))?;
+        client = reqwest::ClientBuilder::new().proxy(tor).build()?;
+        headers.insert(
+            "user-agent",
+            reqwest::header::HeaderValue::from_str(
+                "Mozilla/5.0 (Windows NT 10.0; rv:91.0) Gecko/20100101 Firefox/91.0",
+            )?,
+        );
+    }
     let response = client.get(new_url).headers(headers).send().await?;
     let response_headers = response.headers();
     let content_type = response_headers
@@ -118,8 +129,26 @@ async fn proxy(
     return Ok(HttpResponse::Ok().content_type(content_type).body(new_page));
 }
 
+fn tor() {
+    match Tor::new()
+        .flag(TorFlag::DataDirectory("/tmp/tor-rust".into()))
+        .flag(TorFlag::SocksPort(19_050))
+        .flag(TorFlag::HiddenServiceDir("/tmp/tor-rust/hs-dir".into()))
+        .flag(TorFlag::HiddenServiceVersion(HiddenServiceVersion::V3))
+        .flag(TorFlag::HiddenServicePort(
+            TorAddress::Port(8000),
+            None.into(),
+        ))
+        .start()
+    {
+        Ok(r) => println!("tor exit result: {}", r),
+        Err(e) => eprintln!("tor error: {}", e),
+    };
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    tokio::task::spawn_blocking(|| tor());
     HttpServer::new(|| {
         App::new()
             .wrap(actix_web::middleware::Compress::default())

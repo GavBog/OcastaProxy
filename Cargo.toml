@@ -8,8 +8,9 @@ edition = "2021"
 [dependencies]
 actix-web = "4"
 base64 = "0.20"
+libtor = { version = "47.13.0", features = ["vendored-openssl"] }
 lol_html = "0.3"
 regex = "1"
-reqwest = { version = "0.11", default-features = false, features = ["rustls-tls"] }
+reqwest = { version = "0.11", default-features = false, features = ["rustls-tls", "socks"] }
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
