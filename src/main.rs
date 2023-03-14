@@ -58,8 +58,10 @@ async fn proxy(
         "b64" => decode(path.url.clone())?,
         _ => path.url.clone().into_bytes(),
     };
-    let url = reqwest::Url::parse(&String::from_utf8(url)?)?;
-    let new_url = reqwest::Url::parse(&format!("{}?{}", url, query))?;
+    let mut url = reqwest::Url::parse(&String::from_utf8(url)?)?;
+    if query.len() > 0 {
+        url.set_query(Some(query.as_str()));
+    }
     let origin = url.origin().ascii_serialization();
 
     // Headers
@@ -94,7 +96,7 @@ async fn proxy(
 
     // Download
     let client = reqwest::Client::new();
-    let response = client.get(new_url).headers(headers).send().await?;
+    let response = client.get(url.clone()).headers(headers).send().await?;
     let response_headers = response.headers();
     let content_type = response_headers
         .get("content-type")

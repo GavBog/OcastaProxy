@@ -98,8 +98,12 @@ fn html(page: String, url: reqwest::Url, encoding: String, origin: String) -> St
             element_content_handlers: vec![
                 element!("head", |el| {
                     el.prepend(
-                        format!("<script>{}</script>", include_str!("../static/client.js"))
-                            .as_str(),
+                        format!(
+                            "<script data-config={}>{}</script>",
+                            format!(r#"{{"prefix":"/{}/","url":"{}"}}"#, encoding, url),
+                            include_str!("../static/client.js")
+                        )
+                        .as_str(),
                         ContentType::Html,
                     );
 
@@ -121,12 +125,6 @@ fn html(page: String, url: reqwest::Url, encoding: String, origin: String) -> St
                     el.remove_attribute("nonce");
                     Ok(())
                 }),
-                // Test
-                element!("[data-jsarwt]", |el| {
-                    el.remove_attribute("data-jsarwt");
-                    Ok(())
-                }),
-                // End Test
                 // URLs
                 element!("[src]", |el| {
                     let attribute = el.get_attribute("src").unwrap_or_default();
