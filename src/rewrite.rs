@@ -17,6 +17,9 @@ fn get_url(el: String, origin: String, encoding: String) -> String {
     if attribute.starts_with("./") {
         attribute = attribute[2..].to_string();
     }
+    if attribute.starts_with("../") {
+        attribute = attribute[3..].to_string();
+    }
 
     if attribute.starts_with(format!("/{}/", encoding).as_str()) {
         return attribute;
@@ -100,7 +103,10 @@ fn html(page: String, url: reqwest::Url, encoding: String, origin: String) -> St
                     el.prepend(
                         format!(
                             "<script data-config={}>{}</script>",
-                            format!(r#"{{"prefix":"/{}/","url":"{}"}}"#, encoding, url),
+                            format!(
+                                r#"{{"prefix":"/{0}/","encode":"{0}","url":"{1}"}}"#,
+                                encoding, url
+                            ),
                             include_str!("../static/client.js")
                         )
                         .as_str(),

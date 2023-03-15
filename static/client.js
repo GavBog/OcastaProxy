@@ -1,7 +1,9 @@
 // Using code from Rhodium (https://github.com/LudicrousDevelopment/Rhodium/blob/main/lib/main/index.js)
 // I'll rewrite this using WASM when I find some time
 
-const $OcastaConfig = JSON.parse(document.currentScript.getAttribute("data-config"));
+const $OcastaConfig = JSON.parse(
+  document.currentScript.getAttribute("data-config")
+);
 $OcastaConfig.url = $OcastaConfig.url
   .replace("https://", "https:/")
   .replace("https:/", "https://");
@@ -317,9 +319,7 @@ $Ocasta.Location = function (url, window = _window) {
         return new Function(
           "arg",
           `return window.location.${prop}(arg?${
-            prop !== "reload" && prop !== "toString"
-              ? "$Ocasta.go(arg)"
-              : "arg"
+            prop !== "reload" && prop !== "toString" ? "$Ocasta.go(arg)" : "arg"
           }:null)`
         );
       },
@@ -515,10 +515,7 @@ $Ocasta.html = function (body) {
           _config.elements.forEach((el) => {
             document.querySelectorAll(`${el}`).forEach((node) => {
               if (node.textContent)
-                node.textContent = $Ocasta.css(
-                  node.textContent || "",
-                  context
-                );
+                node.textContent = $Ocasta.css(node.textContent || "", context);
             });
           });
           _config.tags.forEach((tag) => {
@@ -1048,7 +1045,9 @@ window.Document.prototype.write = function () {
 
         p2.split(",").forEach((url) => {
           url = url.trimStart().split(" ");
-          url[0] = $Ocasta.url.encode(url[0], { Url: new URL($OcastaConfig.url) });
+          url[0] = $Ocasta.url.encode(url[0], {
+            Url: new URL($OcastaConfig.url),
+          });
           src_arr.push(url.join(" "));
         });
 
@@ -1125,7 +1124,8 @@ window.fetch = new Proxy(window.fetch, {
       Object.assign(a[0], arg);
       return Reflect.apply(t, g, a);
     } //.url = $Ocasta.url.encode(a[0].url, {Url: new URL($OcastaConfig.url)});return Reflect.apply(t, g, a)}
-    if (a[0]) a[0] = $Ocasta.url.encode(a[0], { Url: new URL($OcastaConfig.url) });
+    if (a[0])
+      a[0] = $Ocasta.url.encode(a[0], { Url: new URL($OcastaConfig.url) });
     return Reflect.apply(t, g, a);
   },
 });
@@ -1186,8 +1186,8 @@ window.WebSocket = new Proxy(window.WebSocket, {
       location.protocol.replace("http", "ws") +
       "//" +
       hostnm +
+      "/ws" +
       $Ocasta.prefix +
-      "?ws=" +
       $Ocasta.encoding.encode(a[0] + origin);
     return Reflect.construct(t, a);
   },
