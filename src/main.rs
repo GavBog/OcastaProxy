@@ -1,6 +1,6 @@
 use actix_web::{get, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use base64::{decode, encode};
-use ocastaproxy::rewrite;
+use ocastaproxy::{rewrite, websocket};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -12,12 +12,6 @@ struct FormData {
 struct UrlData {
     encoding: String,
     url: String,
-}
-
-#[derive(Deserialize)]
-struct ProxyData {
-    #[serde(flatten)]
-    query: std::collections::HashMap<String, String>,
 }
 
 async fn index() -> impl Responder {
@@ -45,22 +39,15 @@ async fn gateway(data: web::Query<FormData>, path: web::Path<String>) -> impl Re
 #[get("/{encoding}/{url:.*}")]
 async fn proxy(
     path: web::Path<UrlData>,
-    query: web::Query<ProxyData>,
     req: HttpRequest,
 ) -> Result<impl Responder, Box<dyn std::error::Error>> {
-    let query = query
-        .query
-        .iter()
-        .map(|(k, v)| format!("{}={}", k, v))
-        .collect::<Vec<String>>()
-        .join("&");
     let url = match path.encoding.as_str() {
         "b64" => decode(path.url.clone())?,
         _ => path.url.clone().into_bytes(),
     };
     let mut url = reqwest::Url::parse(&String::from_utf8(url)?)?;
-    if query.len() > 0 {
-        url.set_query(Some(query.as_str()));
+    if !req.query_string().is_empty() {
+        url.set_query(Some(req.query_string()));
     }
     let origin = url.origin().ascii_serialization();
 
@@ -127,6 +114,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(actix_web::middleware::Compress::default())
             .route("/", web::get().to(index))
             .service(gateway)
+            .service(websocket::proxy)
             .service(proxy)
     })
     .bind(("0.0.0.0", 8080))?
