@@ -119,6 +119,14 @@ window.EncodingConfiguration = ((ctx) => {
           return btoa(str);
         },
         decode(str) {
+          if (
+            !str.match(
+              /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/g
+            )
+          ) {
+            return str;
+          }
+
           return atob(str);
         },
       };
