@@ -1196,7 +1196,8 @@ window.WebSocket = new Proxy(window.WebSocket, {
       hostnm +
       "/ws" +
       $Ocasta.prefix +
-      $Ocasta.encoding.encode(a[0] + origin);
+      a[0] +
+      origin;
     return Reflect.construct(t, a);
   },
 });

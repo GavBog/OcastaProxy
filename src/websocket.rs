@@ -1,139 +1,122 @@
-use actix_web::{get, web, HttpRequest, HttpResponse};
-use actix_ws::Message as ActixMessage;
+use axum::{
+    body::Body,
+    extract::{
+        self,
+        ws::{Message as AxumMessage, WebSocket, WebSocketUpgrade},
+    },
+    http::Request,
+    response::IntoResponse,
+};
 use futures_util::{SinkExt, StreamExt};
+use serde::Deserialize;
 use tokio_tungstenite::{
     connect_async,
-    tungstenite::{http, Message as TungsteniteMessage, Result},
+    tungstenite::{http, Message as TungsteniteMessage},
+    MaybeTlsStream, WebSocketStream,
 };
 
-#[get("/ws/main/{url:.*}")]
+#[derive(Deserialize)]
+pub struct ProxyData {
+    #[serde(flatten)]
+    query: std::collections::HashMap<String, String>,
+}
+
 pub async fn proxy(
-    req: HttpRequest,
-    stream: web::Payload,
-    url: web::Path<String>,
-) -> Result<HttpResponse, actix_web::Error> {
+    ws: WebSocketUpgrade,
+    extract::Path((_encoding, url)): extract::Path<(String, String)>,
+    query: extract::Query<ProxyData>,
+    req: Request<Body>,
+) -> impl IntoResponse {
     let mut url = reqwest::Url::parse(url.as_str()).unwrap();
-    let query = req
-        .query_string()
-        .split('&')
-        .filter(|s| !s.starts_with("origin="))
-        .collect::<Vec<&str>>()
-        .join("&");
 
-    url.set_query(Some(query.as_str()));
+    url.query_pairs_mut().clear().extend_pairs(
+        query
+            .query
+            .iter()
+            .filter(|(key, _)| !key.starts_with("origin=")),
+    );
 
-    let origin = req
-        .query_string()
-        .split('&')
-        .find(|s| s.starts_with("origin="))
-        .map(|s| s.split('=').nth(1).unwrap_or(""))
-        .unwrap_or("");
+    let default_origin = String::new();
+    let origin = query.query.get("origin").unwrap_or(&default_origin);
 
-    let mut headers = reqwest::header::HeaderMap::new();
-    for (k, v) in req.headers() {
-        if k == "origin" {
-            headers.insert(k, origin.parse().unwrap());
-            continue;
-        }
-        if k == "host" {
-            headers.insert(k, url.host_str().unwrap_or("").parse().unwrap());
-            continue;
-        }
-
-        headers.insert(k, v.clone());
-    }
+    let headers = req
+        .headers()
+        .iter()
+        .map(|(k, v)| match k.as_str() {
+            "origin" => (
+                k.clone(),
+                http::HeaderValue::from_str(origin)
+                    .unwrap_or_else(|_| http::HeaderValue::from_static("")),
+            ),
+            "host" => (
+                k.clone(),
+                url.host_str()
+                    .unwrap_or("")
+                    .parse()
+                    .unwrap_or_else(|_| http::HeaderValue::from_static("")),
+            ),
+            _ => (k.clone(), v.clone()),
+        })
+        .collect::<http::HeaderMap>();
 
     let mut server = http::Request::builder().uri(url.as_str()).body(()).unwrap();
     *server.headers_mut() = headers;
+    let (socket, _) = connect_async(server).await.unwrap();
 
-    let (mut response, mut session, mut msg_stream) = actix_ws::handle(&req, stream)?;
+    ws.on_upgrade(move |session| handle_socket(session, socket))
+}
 
-    let (mut socket, server_response) = connect_async(server).await.unwrap();
-    *response.headers_mut() = server_response.headers().clone().into();
-
-    actix_rt::spawn(async move {
-        let mut alive = true;
-        loop {
-            tokio::select! {
-                Some(Ok(msg)) = msg_stream.next() => {
-                    match msg {
-                        ActixMessage::Text(text) => {
-                            let _ = socket.send(TungsteniteMessage::Text(text.to_string())).await;
-                        }
-                        ActixMessage::Binary(bin) => {
-                            let _ = socket.send(TungsteniteMessage::Binary(bin.to_vec())).await;
-                        }
-                        ActixMessage::Ping(msg) => {
-                            let _ = socket.send(TungsteniteMessage::Ping(msg.to_vec())).await;
-                        }
-                        ActixMessage::Pong(msg) => {
-                            if msg.to_vec() == b"OcastaHeartbeat" {
-                                alive = true;
-                                continue;
-                            }
-                            let _ = socket.send(TungsteniteMessage::Pong(msg.to_vec())).await;
-                        }
-                        ActixMessage::Close(_) => {
-                            let _ = socket.send(TungsteniteMessage::Close(None)).await;
-                            let _ = socket.close(None).await;
-                            let _ = session.close(None).await;
-                            break;
-                        }
-                        _ => {}
-                    }
-                }
-                Some(msg) = socket.next() => {
-                    match msg {
-                        Ok(msg) => {
-                            match msg {
-                                TungsteniteMessage::Text(text) => {
-                                    let _ = session.text(text).await;
-                                }
-                                TungsteniteMessage::Binary(bin) => {
-                                    let _ = session.binary(bin).await;
-                                }
-                                TungsteniteMessage::Ping(msg) => {
-                                    let _ = session.ping(&msg).await;
-                                }
-                                TungsteniteMessage::Pong(msg) => {
-                                    let _ = session.pong(&msg).await;
-                                }
-                                TungsteniteMessage::Close(_) => {
-                                    let _ = socket.send(TungsteniteMessage::Close(None)).await;
-                                    let _ = socket.close(None).await;
-                                    let _ = session.close(None).await;
-                                    break;
-                                }
-                                _ => {}
-                            }
-                        }
-                        Err(_) => {
-                            let _ = socket.send(TungsteniteMessage::Close(None)).await;
-                            let _ = socket.close(None).await;
-                            let _ = session.close(None).await;
-                            break;
-                        }
-                    }
-                }
-                _ = tokio::time::sleep(std::time::Duration::from_secs(100)) => {
-                    let _ = session.ping(b"OcastaHeartbeat").await;
-                    if !alive {
-                        let _ = socket.send(TungsteniteMessage::Close(None)).await;
-                        let _ = socket.close(None).await;
-                        let _ = session.close(None).await;
-                        break;
-                    }
-                    alive = false;
-                }
-                else => {
-                    let _ = socket.send(TungsteniteMessage::Close(None)).await;
-                    let _ = socket.close(None).await;
-                    let _ = session.close(None).await;
+async fn handle_socket(
+    mut session: WebSocket,
+    mut socket: WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>,
+) {
+    loop {
+        tokio::select! {
+            Some(Ok(msg)) = session.next() => {
+                let msg = axum_message_handler(msg);
+                if msg == TungsteniteMessage::Close(None) {
+                    let _ = socket.send(msg).await;
                     break;
                 }
-            }
+                if let Err(_) = socket.send(msg).await {
+                    break;
+                }
+            },
+            Some(Ok(msg)) = socket.next() => {
+                let msg = tungstenite_message_handler(msg);
+                if msg == AxumMessage::Close(None) {
+                    let _ = session.send(msg).await;
+                    break;
+                }
+                if let Err(_) = session.send(msg).await {
+                    break;
+                }
+            },
+            else => break,
         }
-    });
+    }
 
-    Ok(response)
+    let _ = socket.close(None).await;
+    let _ = session.close().await;
+}
+
+fn axum_message_handler(msg: AxumMessage) -> TungsteniteMessage {
+    match msg {
+        AxumMessage::Text(text) => TungsteniteMessage::Text(text),
+        AxumMessage::Binary(bin) => TungsteniteMessage::Binary(bin),
+        AxumMessage::Ping(msg) => TungsteniteMessage::Ping(msg),
+        AxumMessage::Pong(msg) => TungsteniteMessage::Pong(msg),
+        AxumMessage::Close(_) => TungsteniteMessage::Close(None),
+    }
+}
+
+fn tungstenite_message_handler(msg: TungsteniteMessage) -> AxumMessage {
+    match msg {
+        TungsteniteMessage::Text(text) => AxumMessage::Text(text),
+        TungsteniteMessage::Binary(bin) => AxumMessage::Binary(bin),
+        TungsteniteMessage::Ping(msg) => AxumMessage::Ping(msg),
+        TungsteniteMessage::Pong(msg) => AxumMessage::Pong(msg),
+        TungsteniteMessage::Close(_) => AxumMessage::Close(None),
+        _ => AxumMessage::Close(None),
+    }
 }
