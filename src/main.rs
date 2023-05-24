@@ -27,7 +27,7 @@ struct ProxyData {
 }
 
 async fn index() -> Html<&'static str> {
-    return Html(include_str!("../static/index.html"));
+    Html(include_str!("../static/index.html"))
 }
 
 async fn gateway(url: extract::Query<FormData>, path: extract::Path<String>) -> Response<Body> {
@@ -44,12 +44,19 @@ async fn gateway(url: extract::Query<FormData>, path: extract::Path<String>) -> 
         }
         _ => url,
     };
+    url = format!("/{}/{}", encoding, url);
 
-    return Response::builder()
-        .status(StatusCode::FOUND)
-        .header("location", format!("/{}/{}", encoding, url))
-        .body(Body::empty())
-        .unwrap();
+    let mut res = Response::default();
+    let header = match reqwest::header::HeaderValue::from_str(&url) {
+        Ok(header) => header,
+        Err(_) => {
+            return bad_request_response();
+        }
+    };
+
+    *res.status_mut() = StatusCode::PERMANENT_REDIRECT;
+    res.headers_mut().insert("location", header);
+    res
 }
 
 async fn proxy(
@@ -147,8 +154,15 @@ async fn proxy(
             return internal_server_error_response();
         }
     };
+
+    let status = response.status();
     let mut response_headers = response.headers().clone();
     response_headers.remove("content-length");
+    response_headers.remove("content-security-policy");
+    response_headers.remove("content-security-policy-report-only");
+    response_headers.remove("strict-transport-security");
+    response_headers.remove("x-content-type-options");
+    response_headers.remove("x-frame-options");
     let content_type = match response_headers.get("content-type") {
         Some(content_type) => content_type,
         None => {
@@ -157,10 +171,11 @@ async fn proxy(
     };
 
     if content_type.to_str().unwrap_or("").starts_with("image/") {
-        return Response::builder()
-            .header("content-type", content_type)
-            .body(response.bytes().await.unwrap_or_default().into())
-            .unwrap();
+        let mut res = Response::default();
+        *res.status_mut() = status;
+        *res.headers_mut() = response_headers;
+        *res.body_mut() = response.bytes().await.unwrap_or_default().into();
+        return res;
     }
 
     let page = match response.text().await {
@@ -179,24 +194,23 @@ async fn proxy(
         origin,
     );
 
-    Response::builder()
-        .header("content-type", content_type)
-        .body(Body::from(new_page))
-        .unwrap()
+    let mut res = Response::default();
+    *res.status_mut() = status;
+    *res.headers_mut() = response_headers;
+    *res.body_mut() = new_page.into();
+    res
 }
 
 fn bad_request_response() -> Response<Body> {
-    Response::builder()
-        .status(StatusCode::BAD_REQUEST)
-        .body(Body::empty())
-        .unwrap()
+    let mut res = Response::default();
+    *res.status_mut() = StatusCode::BAD_REQUEST;
+    res
 }
 
 fn internal_server_error_response() -> Response<Body> {
-    Response::builder()
-        .status(StatusCode::INTERNAL_SERVER_ERROR)
-        .body(Body::empty())
-        .unwrap()
+    let mut res = Response::default();
+    *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+    res
 }
 
 #[tokio::main]

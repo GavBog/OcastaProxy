@@ -77,7 +77,7 @@ pub async fn proxy(
         Err(_) => {
             let mut res = http::Response::default();
             *res.status_mut() = http::StatusCode::BAD_REQUEST;
-            return res;
+            res
         }
     }
 }

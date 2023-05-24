@@ -60,7 +60,7 @@ fn get_url(el: String, origin: String, encoding: String) -> String {
 
     attribute = format!("/{}/{}", encoding, attribute);
 
-    return attribute;
+    attribute
 }
 
 fn rewritecss(text: String, encoding: String, origin: String) -> Result<String, Error> {
@@ -79,7 +79,7 @@ fn rewritecss(text: String, encoding: String, origin: String) -> Result<String, 
         })
         .to_string();
 
-    return Ok(text);
+    Ok(text)
 }
 
 fn rewritejs(url: reqwest::Url, text: String) -> Result<String, Error> {
@@ -109,7 +109,7 @@ fn rewritejs(url: reqwest::Url, text: String) -> Result<String, Error> {
         })
         .to_string();
 
-    return Ok(text);
+    Ok(text)
 }
 
 fn html(page: String, url: reqwest::Url, encoding: String, origin: String) -> String {
@@ -224,7 +224,7 @@ fn html(page: String, url: reqwest::Url, encoding: String, origin: String) -> St
     rewriter.end().unwrap_or_default();
 
     let page = String::from_utf8(output).unwrap_or_default();
-    return page;
+    page
 }
 
 pub fn page(
@@ -244,5 +244,5 @@ pub fn page(
         return rewritejs(url, page).unwrap_or_default();
     }
 
-    return page;
+    page
 }
