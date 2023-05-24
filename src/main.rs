@@ -67,34 +67,22 @@ async fn proxy(
                     Ok(url) => match reqwest::Url::parse(&url) {
                         Ok(url) => url,
                         Err(_) => {
-                            return Response::builder()
-                                .status(StatusCode::BAD_REQUEST)
-                                .body(Body::empty())
-                                .unwrap();
+                            return bad_request_response();
                         }
                     },
                     Err(_) => {
-                        return Response::builder()
-                            .status(StatusCode::BAD_REQUEST)
-                            .body(Body::empty())
-                            .unwrap();
+                        return bad_request_response();
                     }
                 },
                 Err(_) => {
-                    return Response::builder()
-                        .status(StatusCode::BAD_REQUEST)
-                        .body(Body::empty())
-                        .unwrap();
+                    return bad_request_response();
                 }
             }
         }
         _ => match reqwest::Url::parse(&url) {
             Ok(url) => url,
             Err(_) => {
-                return Response::builder()
-                    .status(StatusCode::BAD_REQUEST)
-                    .body(Body::empty())
-                    .unwrap();
+                return bad_request_response();
             }
         },
     };
@@ -133,10 +121,7 @@ async fn proxy(
                 match reqwest::header::HeaderValue::from_str(&origin) {
                     Ok(header_value) => headers.insert(key.clone(), header_value),
                     Err(_) => {
-                        return Response::builder()
-                            .status(StatusCode::INTERNAL_SERVER_ERROR)
-                            .body(Body::empty())
-                            .unwrap();
+                        return internal_server_error_response();
                     }
                 };
             }
@@ -144,10 +129,7 @@ async fn proxy(
                 match reqwest::header::HeaderValue::from_str(url.as_str()) {
                     Ok(header_value) => headers.insert(key.clone(), header_value),
                     Err(_) => {
-                        return Response::builder()
-                            .status(StatusCode::INTERNAL_SERVER_ERROR)
-                            .body(Body::empty())
-                            .unwrap();
+                        return internal_server_error_response();
                     }
                 };
             }
@@ -162,10 +144,7 @@ async fn proxy(
     let response = match client.get(url.clone()).headers(headers).send().await {
         Ok(res) => res,
         Err(_) => {
-            return Response::builder()
-                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body(Body::empty())
-                .unwrap();
+            return internal_server_error_response();
         }
     };
     let mut response_headers = response.headers().clone();
@@ -173,10 +152,7 @@ async fn proxy(
     let content_type = match response_headers.get("content-type") {
         Some(content_type) => content_type,
         None => {
-            return Response::builder()
-                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body(Body::empty())
-                .unwrap();
+            return internal_server_error_response();
         }
     };
 
@@ -190,10 +166,7 @@ async fn proxy(
     let page = match response.text().await {
         Ok(page) => page,
         Err(_) => {
-            return Response::builder()
-                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body(Body::empty())
-                .unwrap();
+            return internal_server_error_response();
         }
     };
 
@@ -209,6 +182,20 @@ async fn proxy(
     Response::builder()
         .header("content-type", content_type)
         .body(Body::from(new_page))
+        .unwrap()
+}
+
+fn bad_request_response() -> Response<Body> {
+    Response::builder()
+        .status(StatusCode::BAD_REQUEST)
+        .body(Body::empty())
+        .unwrap()
+}
+
+fn internal_server_error_response() -> Response<Body> {
+    Response::builder()
+        .status(StatusCode::INTERNAL_SERVER_ERROR)
+        .body(Body::empty())
         .unwrap()
 }
 

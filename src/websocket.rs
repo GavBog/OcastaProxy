@@ -27,7 +27,14 @@ pub async fn proxy(
     query: extract::Query<ProxyData>,
     req: Request<Body>,
 ) -> impl IntoResponse {
-    let mut url = reqwest::Url::parse(url.as_str()).unwrap();
+    let mut url = match reqwest::Url::parse(&url) {
+        Ok(url) => url,
+        Err(_) => {
+            let mut res = http::Response::default();
+            *res.status_mut() = http::StatusCode::BAD_REQUEST;
+            return res;
+        }
+    };
 
     url.query_pairs_mut().clear().extend_pairs(
         query
@@ -59,11 +66,20 @@ pub async fn proxy(
         })
         .collect::<http::HeaderMap>();
 
-    let mut server = http::Request::builder().uri(url.as_str()).body(()).unwrap();
+    let mut server = http::Request::builder()
+        .uri(url.as_str())
+        .body(())
+        .unwrap_or_default();
     *server.headers_mut() = headers;
-    let (socket, _) = connect_async(server).await.unwrap();
 
-    ws.on_upgrade(move |session| handle_socket(session, socket))
+    match connect_async(server).await {
+        Ok((socket, _)) => ws.on_upgrade(move |session| handle_socket(session, socket)),
+        Err(_) => {
+            let mut res = http::Response::default();
+            *res.status_mut() = http::StatusCode::BAD_REQUEST;
+            return res;
+        }
+    }
 }
 
 async fn handle_socket(
