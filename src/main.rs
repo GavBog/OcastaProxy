@@ -11,7 +11,7 @@ use base64::{
     engine::{self, general_purpose},
     Engine as _,
 };
-use ocastaproxy::{rewrite, websocket};
+use ocastaproxy::{errors, rewrite, websocket};
 use serde::Deserialize;
 use std::net::SocketAddr;
 
@@ -46,14 +46,13 @@ async fn gateway(url: extract::Query<FormData>, path: extract::Path<String>) -> 
     };
     url = format!("/{}/{}", encoding, url);
 
-    let mut res = Response::default();
-    let header = match reqwest::header::HeaderValue::from_str(&url) {
-        Ok(header) => header,
-        Err(_) => {
-            return bad_request_response();
-        }
+    let header = if let Ok(header) = reqwest::header::HeaderValue::from_str(&url) {
+        header
+    } else {
+        return errors::error_response(StatusCode::BAD_REQUEST);
     };
 
+    let mut res = Response::default();
     *res.status_mut() = StatusCode::PERMANENT_REDIRECT;
     res.headers_mut().insert("location", header);
     res
@@ -69,29 +68,27 @@ async fn proxy(
             const CUSTOM_ENGINE: engine::GeneralPurpose =
                 engine::GeneralPurpose::new(&alphabet::URL_SAFE, general_purpose::NO_PAD);
 
-            match CUSTOM_ENGINE.decode(url) {
-                Ok(url) => match String::from_utf8(url) {
-                    Ok(url) => match reqwest::Url::parse(&url) {
-                        Ok(url) => url,
-                        Err(_) => {
-                            return bad_request_response();
-                        }
-                    },
-                    Err(_) => {
-                        return bad_request_response();
+            if let Ok(url) = CUSTOM_ENGINE.decode(url) {
+                if let Ok(url) = String::from_utf8(url) {
+                    if let Ok(url) = reqwest::Url::parse(&url) {
+                        url
+                    } else {
+                        return errors::error_response(StatusCode::BAD_REQUEST);
                     }
-                },
-                Err(_) => {
-                    return bad_request_response();
+                } else {
+                    return errors::error_response(StatusCode::BAD_REQUEST);
                 }
+            } else {
+                return errors::error_response(StatusCode::BAD_REQUEST);
             }
         }
-        _ => match reqwest::Url::parse(&url) {
-            Ok(url) => url,
-            Err(_) => {
-                return bad_request_response();
+        _ => {
+            if let Ok(url) = reqwest::Url::parse(&url) {
+                url
+            } else {
+                return errors::error_response(StatusCode::BAD_REQUEST);
             }
-        },
+        }
     };
 
     let query = query
@@ -125,20 +122,14 @@ async fn proxy(
             | "x-real-ip"
             | "x-envoy-external-address" => {}
             "origin" => {
-                match reqwest::header::HeaderValue::from_str(&origin) {
-                    Ok(header_value) => headers.insert(key.clone(), header_value),
-                    Err(_) => {
-                        return internal_server_error_response();
-                    }
-                };
+                if let Ok(header_value) = reqwest::header::HeaderValue::from_str(&origin) {
+                    headers.insert(key.clone(), header_value);
+                }
             }
             "referer" => {
-                match reqwest::header::HeaderValue::from_str(url.as_str()) {
-                    Ok(header_value) => headers.insert(key.clone(), header_value),
-                    Err(_) => {
-                        return internal_server_error_response();
-                    }
-                };
+                if let Ok(header_value) = reqwest::header::HeaderValue::from_str(&origin) {
+                    headers.insert(key.clone(), header_value);
+                }
             }
             _ => {
                 headers.insert(key.clone(), value.clone());
@@ -148,11 +139,10 @@ async fn proxy(
 
     // Download
     let client = reqwest::Client::new();
-    let response = match client.get(url.clone()).headers(headers).send().await {
-        Ok(res) => res,
-        Err(_) => {
-            return internal_server_error_response();
-        }
+    let response = if let Ok(response) = client.get(url.clone()).headers(headers).send().await {
+        response
+    } else {
+        return errors::error_response(StatusCode::BAD_REQUEST);
     };
 
     let status = response.status();
@@ -163,11 +153,10 @@ async fn proxy(
     response_headers.remove("strict-transport-security");
     response_headers.remove("x-content-type-options");
     response_headers.remove("x-frame-options");
-    let content_type = match response_headers.get("content-type") {
-        Some(content_type) => content_type,
-        None => {
-            return internal_server_error_response();
-        }
+    let content_type = if let Some(content_type) = response_headers.get("content-type") {
+        content_type
+    } else {
+        return errors::error_response(StatusCode::BAD_REQUEST);
     };
 
     if content_type.to_str().unwrap_or("").starts_with("image/") {
@@ -178,11 +167,10 @@ async fn proxy(
         return res;
     }
 
-    let page = match response.text().await {
-        Ok(page) => page,
-        Err(_) => {
-            return internal_server_error_response();
-        }
+    let page = if let Ok(page) = response.text().await {
+        page
+    } else {
+        return errors::error_response(StatusCode::BAD_REQUEST);
     };
 
     // Rewrite
@@ -198,18 +186,6 @@ async fn proxy(
     *res.status_mut() = status;
     *res.headers_mut() = response_headers;
     *res.body_mut() = new_page.into();
-    res
-}
-
-fn bad_request_response() -> Response<Body> {
-    let mut res = Response::default();
-    *res.status_mut() = StatusCode::BAD_REQUEST;
-    res
-}
-
-fn internal_server_error_response() -> Response<Body> {
-    let mut res = Response::default();
-    *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
     res
 }
 

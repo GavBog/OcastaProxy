@@ -1,10 +1,11 @@
+use crate::errors;
 use axum::{
     body::Body,
     extract::{
         self,
         ws::{Message as AxumMessage, WebSocket, WebSocketUpgrade},
     },
-    http::Request,
+    http::{Request, StatusCode},
     response::IntoResponse,
 };
 use futures_util::{SinkExt, StreamExt};
@@ -27,13 +28,10 @@ pub async fn proxy(
     query: extract::Query<ProxyData>,
     req: Request<Body>,
 ) -> impl IntoResponse {
-    let mut url = match reqwest::Url::parse(&url) {
-        Ok(url) => url,
-        Err(_) => {
-            let mut res = http::Response::default();
-            *res.status_mut() = http::StatusCode::BAD_REQUEST;
-            return res;
-        }
+    let mut url = if let Ok(url) = reqwest::Url::parse(&url) {
+        url
+    } else {
+        return errors::error_response(StatusCode::BAD_REQUEST).into_response();
     };
 
     url.query_pairs_mut().clear().extend_pairs(
@@ -72,13 +70,10 @@ pub async fn proxy(
         .unwrap_or_default();
     *server.headers_mut() = headers;
 
-    match connect_async(server).await {
-        Ok((socket, _)) => ws.on_upgrade(move |session| handle_socket(session, socket)),
-        Err(_) => {
-            let mut res = http::Response::default();
-            *res.status_mut() = http::StatusCode::BAD_REQUEST;
-            res
-        }
+    if let Ok((socket, _)) = connect_async(server).await {
+        ws.on_upgrade(move |session| handle_socket(session, socket))
+    } else {
+        errors::error_response(StatusCode::INTERNAL_SERVER_ERROR).into_response()
     }
 }
 
