@@ -1,9 +1,9 @@
 use axum::{
-    body::Body,
+    body::{Body, Bytes},
     extract,
-    http::{Request, Response, StatusCode},
+    http::{HeaderMap, HeaderValue, Response, StatusCode},
     response::Html,
-    routing::get,
+    routing::{get, post},
     Router,
 };
 use base64::{
@@ -13,25 +13,23 @@ use base64::{
 };
 use ocastaproxy::{errors, rewrite, websocket};
 use serde::Deserialize;
-use std::net::SocketAddr;
+use std::{collections::HashMap, net::SocketAddr};
 
 #[derive(Deserialize)]
 struct FormData {
     url: String,
 }
 
-#[derive(Deserialize)]
-struct ProxyData {
-    #[serde(flatten)]
-    query: std::collections::HashMap<String, String>,
-}
-
 async fn index() -> Html<&'static str> {
     Html(include_str!("../static/index.html"))
 }
 
-async fn gateway(url: extract::Query<FormData>, path: extract::Path<String>) -> Response<Body> {
-    let mut url = url.url.clone();
+async fn gateway(extract::Path(path): extract::Path<String>, body: Bytes) -> Response<Body> {
+    let mut url = if let Ok(data) = serde_urlencoded::from_bytes::<FormData>(&body) {
+        data.url
+    } else {
+        return errors::error_response(StatusCode::BAD_REQUEST);
+    };
     if !url.starts_with("http") {
         url = format!("https://{}", url);
     }
@@ -46,23 +44,23 @@ async fn gateway(url: extract::Query<FormData>, path: extract::Path<String>) -> 
     };
     url = format!("/{}/{}", encoding, url);
 
-    let header = if let Ok(header) = reqwest::header::HeaderValue::from_str(&url) {
+    let header = if let Ok(header) = HeaderValue::from_str(&url) {
         header
     } else {
         return errors::error_response(StatusCode::BAD_REQUEST);
     };
 
+    let mut headers = HeaderMap::new();
+    headers.insert("location", header);
+
     let mut res = Response::default();
-    *res.status_mut() = StatusCode::PERMANENT_REDIRECT;
-    res.headers_mut().insert("location", header);
+    *res.status_mut() = StatusCode::SEE_OTHER;
+    *res.headers_mut() = headers;
+
     res
 }
 
-async fn proxy(
-    extract::Path((encoding, url)): extract::Path<(String, String)>,
-    query: extract::Query<ProxyData>,
-    req: Request<Body>,
-) -> Response<Body> {
+fn get_url(url: String, encoding: String, query: HashMap<String, String>) -> String {
     let mut url = match encoding.as_str() {
         "b64" => {
             const CUSTOM_ENGINE: engine::GeneralPurpose =
@@ -73,26 +71,25 @@ async fn proxy(
                     if let Ok(url) = reqwest::Url::parse(&url) {
                         url
                     } else {
-                        return errors::error_response(StatusCode::BAD_REQUEST);
+                        return "".to_string();
                     }
                 } else {
-                    return errors::error_response(StatusCode::BAD_REQUEST);
+                    return "".to_string();
                 }
             } else {
-                return errors::error_response(StatusCode::BAD_REQUEST);
+                return "".to_string();
             }
         }
         _ => {
             if let Ok(url) = reqwest::Url::parse(&url) {
                 url
             } else {
-                return errors::error_response(StatusCode::BAD_REQUEST);
+                return "".to_string();
             }
         }
     };
 
     let query = query
-        .query
         .iter()
         .map(|(key, value)| {
             if value.is_empty() {
@@ -108,10 +105,12 @@ async fn proxy(
         url.set_query(Some(&query));
     }
 
-    // Headers
-    let mut headers = reqwest::header::HeaderMap::new();
-    let origin = url.origin().ascii_serialization();
-    for (key, value) in req.headers().iter() {
+    url.to_string()
+}
+
+fn get_headers(headers: HeaderMap, origin: String) -> HeaderMap {
+    let mut new_headers = HeaderMap::new();
+    for (key, value) in headers.iter() {
         match key.as_str() {
             "host"
             | "accept-encoding"
@@ -122,22 +121,37 @@ async fn proxy(
             | "x-real-ip"
             | "x-envoy-external-address" => {}
             "origin" => {
-                if let Ok(header_value) = reqwest::header::HeaderValue::from_str(&origin) {
-                    headers.insert(key.clone(), header_value);
+                if let Ok(header_value) = HeaderValue::from_str(&origin) {
+                    new_headers.insert(key.clone(), header_value);
                 }
             }
             "referer" => {
-                if let Ok(header_value) = reqwest::header::HeaderValue::from_str(&origin) {
-                    headers.insert(key.clone(), header_value);
+                if let Ok(header_value) = HeaderValue::from_str(&origin) {
+                    new_headers.insert(key.clone(), header_value);
                 }
             }
             _ => {
-                headers.insert(key.clone(), value.clone());
+                new_headers.insert(key.clone(), value.clone());
             }
         }
     }
 
-    // Download
+    new_headers
+}
+
+async fn proxy(
+    extract::Path((encoding, url)): extract::Path<(String, String)>,
+    extract::Query(query): extract::Query<HashMap<String, String>>,
+    headers: HeaderMap,
+) -> Response<Body> {
+    let url = if let Ok(url) = reqwest::Url::parse(&get_url(url, encoding.clone(), query)) {
+        url
+    } else {
+        return errors::error_response(StatusCode::BAD_REQUEST);
+    };
+
+    let origin = url.origin().ascii_serialization();
+    let headers = get_headers(headers, origin.clone());
     let client = reqwest::Client::new();
     let response = if let Ok(response) = client.get(url.clone()).headers(headers).send().await {
         response
@@ -189,12 +203,63 @@ async fn proxy(
     res
 }
 
+async fn post_proxy(
+    extract::Path((encoding, url)): extract::Path<(String, String)>,
+    extract::Query(query): extract::Query<HashMap<String, String>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response<Body> {
+    let url = if let Ok(url) = reqwest::Url::parse(&get_url(url, encoding.clone(), query)) {
+        url
+    } else {
+        return errors::error_response(StatusCode::BAD_REQUEST);
+    };
+
+    let origin = url.origin().ascii_serialization();
+    let headers = get_headers(headers, origin.clone());
+    let client = reqwest::Client::new();
+    let response = if let Ok(response) = client
+        .post(url.clone())
+        .headers(headers)
+        .body(body)
+        .send()
+        .await
+    {
+        response
+    } else {
+        return errors::error_response(StatusCode::BAD_REQUEST);
+    };
+
+    let status = response.status();
+    let mut response_headers = response.headers().clone();
+    response_headers.remove("content-length");
+    response_headers.remove("content-security-policy");
+    response_headers.remove("content-security-policy-report-only");
+    response_headers.remove("strict-transport-security");
+    response_headers.remove("x-content-type-options");
+    response_headers.remove("x-frame-options");
+
+    let page = if let Ok(page) = response.text().await {
+        page
+    } else {
+        return errors::error_response(StatusCode::BAD_REQUEST);
+    };
+
+    let mut res = Response::default();
+    *res.status_mut() = status;
+    *res.headers_mut() = response_headers;
+    *res.body_mut() = page.into();
+
+    res
+}
+
 #[tokio::main]
 async fn main() {
     let app = Router::new()
         .route("/", get(index))
-        .route("/:encoding/gateway", get(gateway))
+        .route("/:encoding/gateway", post(gateway))
         .route("/:encoding/*url", get(proxy))
+        .route("/:encoding/*url", post(post_proxy))
         .route("/ws/:encoding/*url", get(websocket::proxy));
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 8080));
