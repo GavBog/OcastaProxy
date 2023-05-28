@@ -1,8 +1,4 @@
-use base64::{
-    alphabet,
-    engine::{self, general_purpose},
-    Engine as _,
-};
+use base64::{engine::general_purpose::STANDARD as b64, Engine};
 use lol_html::{element, html_content::ContentType, text, HtmlRewriter, Settings};
 use regex::{Error, Regex};
 
@@ -49,14 +45,7 @@ fn get_url(el: String, origin: String, encoding: String) -> String {
         format!("{}{}", origin, attribute)
     };
 
-    attribute = match encoding.as_str() {
-        "b64" => {
-            const CUSTOM_ENGINE: engine::GeneralPurpose =
-                engine::GeneralPurpose::new(&alphabet::URL_SAFE, general_purpose::NO_PAD);
-            CUSTOM_ENGINE.encode(attribute)
-        }
-        _ => attribute,
-    };
+    attribute = encode(attribute, encoding.clone());
 
     attribute = format!("/{}/{}", encoding, attribute);
 
@@ -225,6 +214,26 @@ fn html(page: String, url: reqwest::Url, encoding: String, origin: String) -> St
 
     let page = String::from_utf8(output).unwrap_or_default();
     page
+}
+
+pub fn encode(text: String, encoding: String) -> String {
+    let text = match encoding.as_str() {
+        "b64" => b64.encode(text.as_bytes()),
+        _ => text,
+    };
+
+    text
+}
+
+pub fn decode(text: String, encoding: String) -> String {
+    let text = match encoding.as_str() {
+        "b64" => {
+            String::from_utf8(b64.decode(text.as_bytes()).unwrap_or_default()).unwrap_or_default()
+        }
+        _ => text,
+    };
+
+    text
 }
 
 pub fn page(

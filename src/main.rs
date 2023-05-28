@@ -6,12 +6,11 @@ use axum::{
     routing::{any, get, post},
     Router,
 };
-use base64::{
-    alphabet,
-    engine::{self, general_purpose},
-    Engine as _,
+use ocastaproxy::{
+    errors,
+    rewrite::{self, decode, encode},
+    websocket,
 };
-use ocastaproxy::{errors, rewrite, websocket};
 use serde::Deserialize;
 use std::{collections::HashMap, net::SocketAddr};
 
@@ -33,15 +32,9 @@ async fn gateway(extract::Path(path): extract::Path<String>, body: Bytes) -> Res
     if !url.starts_with("http") {
         url = format!("https://{}", url);
     }
+
     let encoding = path.as_str();
-    url = match encoding {
-        "b64" => {
-            const CUSTOM_ENGINE: engine::GeneralPurpose =
-                engine::GeneralPurpose::new(&alphabet::URL_SAFE, general_purpose::NO_PAD);
-            CUSTOM_ENGINE.encode(url)
-        }
-        _ => url,
-    };
+    url = encode(url, encoding.to_string());
     url = format!("/{}/{}", encoding, url);
 
     let header = if let Ok(header) = HeaderValue::from_str(&url) {
@@ -66,32 +59,10 @@ async fn proxy(
     headers: HeaderMap,
     req: Request<Body>,
 ) -> Response<Body> {
-    let mut url = match encoding.as_str() {
-        "b64" => {
-            const CUSTOM_ENGINE: engine::GeneralPurpose =
-                engine::GeneralPurpose::new(&alphabet::URL_SAFE, general_purpose::NO_PAD);
-
-            if let Ok(url) = CUSTOM_ENGINE.decode(url) {
-                if let Ok(url) = String::from_utf8(url) {
-                    if let Ok(url) = reqwest::Url::parse(&url) {
-                        url
-                    } else {
-                        return errors::error_response(StatusCode::BAD_REQUEST);
-                    }
-                } else {
-                    return errors::error_response(StatusCode::BAD_REQUEST);
-                }
-            } else {
-                return errors::error_response(StatusCode::BAD_REQUEST);
-            }
-        }
-        _ => {
-            if let Ok(url) = reqwest::Url::parse(&url) {
-                url
-            } else {
-                return errors::error_response(StatusCode::BAD_REQUEST);
-            }
-        }
+    let mut url = if let Ok(url) = reqwest::Url::parse(&decode(url, encoding.clone())) {
+        url
+    } else {
+        return errors::error_response(StatusCode::BAD_REQUEST);
     };
 
     let query = query
