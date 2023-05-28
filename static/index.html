@@ -1,113 +1,156 @@
 <!DOCTYPE html>
 <html>
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Ubuntu&display=swap"
-      rel="stylesheet"
-    />
-    <link rel="stylesheet" href="https://www.w3schools.com/w3css/4/w3.css" />
-    <link
-      rel="shortcut icon"
-      type="image/png"
-      href="https://projectocasta.org/favicon.ico"
-    />
-    <title>Project Ocasta - Bypass</title>
-
-    <style>
-      body {
-        font-family: "Ubuntu";
-        font-size: "50px";
-        color: #fff;
-        text-align: center;
-        margin-top: 10%;
-        background-color: #151719;
-      }
-    </style>
-  </head>
-
-  <body>
-    <img
-      src="https://projectocasta.org/logo512.png"
-      alt="logo"
-      width="250"
-      height="250"
-    />
-    <br />
-    <span class="w3-xlarge">Input your URL here: </span>
-    <br />
-    <form method="POST" action="/main/gateway" name="urlForm">
-      <input
-        class="w3-xlarge"
-        name="url"
-        type="text"
-        placeholder="https://projectocasta.org/"
-      />
-      <button class="w3-xlarge" type="submit">Go!</button>
-    </form>
-
-    <br />
-
-    <div>
-      <button
-        onclick="document.getElementById('settingsMenu').style.display='block'"
-        class="w3-button w3-xlarge w3-black"
-      >
-        Settings
-      </button>
-      <div id="settingsMenu" class="w3-modal">
-        <div class="w3-modal-content w3-animate-top w3-card-4 w3-black">
-          <header class="w3-container">
-            <span
-              onclick="document.getElementById('settingsMenu').style.display='none'"
-              class="w3-button w3-display-topright"
-              >&times;</span
-            >
-            <h2>Settings</h2>
-          </header>
-          <div class="w3-container">
-            <label><b>Encoding</b></label>
-            <input
-              class="w3-check"
-              type="checkbox"
-              name="encoding"
-              value="true"
-              onchange="toggleEncoding()"
+   <head>
+      <meta charset="UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link
+         href="https://fonts.googleapis.com/css2?family=Ubuntu&display=swap"
+         rel="stylesheet"
+         />
+      <link rel="stylesheet" href="https://www.w3schools.com/w3css/4/w3.css" />
+      <link
+         rel="shortcut icon"
+         type="image/png"
+         href="https://projectocasta.org/favicon.ico"
+         />
+      <title>Project Ocasta - Bypass</title>
+      <style>
+         body {
+         font-family: "Ubuntu";
+         font-size: "50px";
+         color: #fff;
+         text-align: center;
+         margin-top: 10%;
+         background-color: #151719;
+         }
+      </style>
+   </head>
+   <body>
+      <img
+         src="https://projectocasta.org/logo512.png"
+         alt="logo"
+         width="250"
+         height="250"
+         />
+      <br />
+      <span class="w3-xlarge">Input your URL here: </span>
+      <br />
+      <form method="POST" action="/main/gateway" name="urlForm">
+         <input
+            class="w3-xlarge search"
+            name="url"
+            type="text"
+            placeholder="https://projectocasta.org",
+            autocomplete="off"
             />
-            <footer class="w3-container">
-              <p>Project Ocasta</p>
-            </footer>
-          </div>
-        </div>
+         <button class="w3-xlarge go" type="submit">Go!</button>
+      </form>
+      <br />
+      <div>
+         <button
+            onclick="document.getElementById('settingsMenu').style.display='block'"
+            class="w3-button w3-xlarge settingsButton"
+            >
+         Settings
+         </button>
+         <div id="settingsMenu" class="w3-modal">
+            <div class="w3-modal-content w3-animate-top w3-card-4 w3-black settings">
+               <header class="w3-container">
+                  <span
+                     onclick="document.getElementById('settingsMenu').style.display='none'"
+                     class="w3-button w3-display-topright settingsClose"
+                     >&times;</span
+                     >
+                  <h2>Settings</h2>
+               </header>
+               <div class="w3-container">
+                  <label><b>Encoding</b></label>
+                  <input
+                     class="w3-check"
+                     type="checkbox"
+                     name="encoding"
+                     value="true"
+                     onchange="toggleEncoding()"
+                     />
+                  <footer class="w3-container">
+                     <p>Project Ocasta</p>
+                  </footer>
+               </div>
+            </div>
+         </div>
       </div>
-    </div>
-
-    <script>
-      document.getElementsByName("url")[0].focus();
-      if (getCookie("encoding") == "b64") {
-        document.getElementsByName("encoding")[0].click();
-      }
-
-      function toggleEncoding() {
-        var encoding = document.getElementsByName("encoding")[0];
-        var urlForm = document.getElementsByName("urlForm")[0];
-        if (encoding.value == "true") {
-          urlForm.action = "/b64/gateway";
-          document.cookie = "encoding=b64";
-          encoding.value = "false";
-        } else {
-          urlForm.action = "/main/gateway";
-          document.cookie = "encoding=main";
-          encoding.value = "true";
-        }
-      }
-
-      function getCookie(name) {
-        var value = "; " + document.cookie;
-        var parts = value.split("; " + name + "=");
-        if (parts.length == 2) return parts.pop().split(";").shift();
-      }
-    </script>
-  </body>
+      <style>
+         .search {
+         outline: none;
+         border: none;
+         background: #2d2d2d;
+         height: 3rem;
+         width: 30rem;
+         border-radius: 6px;
+         color: white;
+         padding: 0 10px;
+         }
+         .go {
+         outline: none;
+         border: none;
+         background: #2d2d2d;
+         height: 3rem;
+         border-radius: 6px;
+         color: white;
+         cursor: pointer;
+         }
+         .settingsButton {
+         background: #2d2d2d;
+         height: 3rem;
+         border-radius: 6px;
+         color: white;
+         cursor: pointer;
+         line-height: 1.5rem;
+         }
+         .settingsButton:hover {
+         background: #2d2d2d !important;
+         color: white !important;
+         }
+         .settings {
+         border-radius: 6px;
+         background: #252525 !important;
+         }
+         .settingsClose {
+         font-size: 30px;
+         height: 3rem;
+         padding: 0;
+         display: flex;
+         align-items: center;
+         justify-content: center;
+         width: 3rem;
+         line-height: 1;
+         }
+      </style>
+      <script>
+         document.getElementsByName("url")[0].focus();
+         if (getCookie("encoding") == "b64") {
+           document.getElementsByName("encoding")[0].click();
+         }
+         
+         function toggleEncoding() {
+           var encoding = document.getElementsByName("encoding")[0];
+           var urlForm = document.getElementsByName("urlForm")[0];
+           if (encoding.value == "true") {
+             urlForm.action = "/b64/gateway";
+             document.cookie = "encoding=b64";
+             encoding.value = "false";
+           } else {
+             urlForm.action = "/main/gateway";
+             document.cookie = "encoding=main";
+             encoding.value = "true";
+           }
+         }
+         
+         function getCookie(name) {
+           var value = "; " + document.cookie;
+           var parts = value.split("; " + name + "=");
+           if (parts.length == 2) return parts.pop().split(";").shift();
+         }
+      </script>
+   </body>
 </html>
