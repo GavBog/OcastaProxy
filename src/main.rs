@@ -126,27 +126,24 @@ async fn proxy(
     let request = request_builder
         .headers(new_headers)
         .body(req.into_body())
-        .build()
-        .map_err(|_| errors::error_response(StatusCode::BAD_REQUEST));
+        .build();
 
-    let request = match request {
-        Ok(request) => request,
-        Err(_) => return errors::error_response(StatusCode::BAD_REQUEST),
+    let request = if let Ok(request) = request {
+        request
+    } else {
+        return errors::error_response(StatusCode::BAD_REQUEST);
     };
 
-    let response = client
-        .execute(request)
-        .await
-        .map_err(|_| errors::error_response(StatusCode::BAD_REQUEST));
+    let response = client.execute(request).await;
 
-    let response = match response {
-        Ok(response) => response,
-        Err(_) => return errors::error_response(StatusCode::BAD_REQUEST),
+    let response = if let Ok(response) = response {
+        response
+    } else {
+        return errors::error_response(StatusCode::BAD_REQUEST);
     };
 
     let status = response.status();
     let mut response_headers = response.headers().clone();
-    response_headers.remove("content-length");
     response_headers.remove("content-security-policy");
     response_headers.remove("content-security-policy-report-only");
     response_headers.remove("strict-transport-security");
@@ -179,6 +176,15 @@ async fn proxy(
         encoding,
         content_type.to_str().unwrap_or("").to_string(),
         origin,
+    );
+
+    response_headers.insert(
+        "content-length",
+        if let Ok(content_length) = HeaderValue::from_str(&new_page.len().to_string()) {
+            content_length
+        } else {
+            return errors::error_response(StatusCode::BAD_REQUEST);
+        },
     );
 
     let mut res = Response::default();
