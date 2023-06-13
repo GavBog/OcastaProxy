@@ -23,6 +23,31 @@ async fn index() -> Html<&'static str> {
     Html(include_str!("../static/index.html"))
 }
 
+async fn static_files(extract::Path(file): extract::Path<String>) -> Response<Body> {
+    let mut path = std::path::PathBuf::from("static");
+    path.push(file);
+    let content_type = if let Some(extension) = path.extension() {
+        match extension.to_str().unwrap_or_default() {
+            "html" => "text/html",
+            "js" => "text/javascript",
+            "wasm" => "application/wasm",
+            _ => "text/plain",
+        }
+    } else {
+        "text/plain"
+    };
+
+    if let Ok(file) = std::fs::read(path) {
+        let mut res = Response::default();
+        *res.status_mut() = StatusCode::OK;
+        *res.body_mut() = file.into();
+        res.headers_mut()
+            .insert("content-type", HeaderValue::from_static(content_type));
+        return res;
+    }
+    errors::error_response(StatusCode::NOT_FOUND)
+}
+
 async fn gateway(extract::Path(path): extract::Path<String>, body: Bytes) -> Response<Body> {
     let mut url = if let Ok(data) = serde_urlencoded::from_bytes::<FormData>(&body) {
         data.url
@@ -198,6 +223,7 @@ async fn proxy(
 async fn main() {
     let app = Router::new()
         .route("/", get(index))
+        .route("/static/*path", get(static_files))
         .route("/:encoding/gateway", post(gateway))
         .route("/:encoding/*url", any(proxy))
         .route("/ws/:encoding/*url", get(websocket::proxy));

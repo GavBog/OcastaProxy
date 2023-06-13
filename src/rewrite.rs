@@ -29,7 +29,10 @@ fn get_url(el: String, origin: String, encoding: String) -> String {
         attribute = format!("https:{}", attribute);
     }
 
-    let valid_protocol = attribute.starts_with("http://") || attribute.starts_with("https://");
+    let valid_protocol = attribute.starts_with("http://")
+        || attribute.starts_with("https://")
+        || attribute.starts_with("ws://")
+        || attribute.starts_with("wss://");
 
     if !origin.ends_with("/")
         && !attribute.starts_with("/")
@@ -106,20 +109,19 @@ fn html(page: String, url: reqwest::Url, encoding: String, origin: String) -> St
     let mut rewriter = HtmlRewriter::new(
         Settings {
             element_content_handlers: vec![
+                // prepend client side scripts to head
                 element!("head", |el| {
-                    el.prepend(
-                        format!(
-                            "<script data-config={}>{}</script>",
-                            format!(
-                                r#"{{"prefix":"/{0}/","encode":"{0}","url":"{1}"}}"#,
-                                encoding, url
-                            ),
-                            include_str!("../static/client.js")
+                    let script = format!(
+                        r#"<script src="/static/wasm.js"></script>
+                        <script>window.wasmB64Encoded = "{}";</script>
+                        <script src="/static/index.js"></script>"#,
+                        b64.encode(
+                            std::fs::read("./static/wasm_bg.wasm")
+                                .expect("failed to read wasm file")
                         )
-                        .as_str(),
-                        ContentType::Html,
                     );
 
+                    let _ = el.prepend(script.as_str(), ContentType::Html);
                     Ok(())
                 }),
                 // remove attributes that interfere with proxy
