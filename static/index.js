@@ -1,11 +1,14 @@
-const { initSync, rewrite } = wasm_bindgen;
+const { rewrite } = wasm_bindgen;
+const page = atob(ocastaPage);
+wasm_bindgen().then(() => {
+  rewrite();
 
-const wasm = atob(window.wasmB64Encoded);
+  document.open();
+  document.write(page);
+  document.close();
 
-const wasmBuffer = new Uint8Array(wasm.length);
-for (let i = 0; i < wasm.length; i++) {
-  wasmBuffer[i] = wasm.charCodeAt(i);
-}
-
-initSync(wasmBuffer);
-rewrite();
+  const scripts = document.querySelectorAll("[data-ocasta]");
+  scripts.forEach((script) => {
+    script.remove();
+  });
+});

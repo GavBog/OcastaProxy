@@ -1,19 +1,23 @@
 use base64::{engine::general_purpose::STANDARD as b64, Engine};
-use js_sys::{Object, Reflect};
-use wasm_bindgen::prelude::*;
+use js_sys::{Array, Function, Object, Proxy, Reflect};
+use wasm_bindgen::{prelude::*, JsCast};
+use web_sys::Url;
+
+// Client side code takes heavy inspiration from Corrosion only rewritten in Rust
+// https://github.com/titaniumnetwork-dev/Corrosion/tree/main/lib/browser
 
 #[wasm_bindgen]
 pub fn rewrite() {
     let window = web_sys::window().expect("no global `window` exists");
-    let href = window.location().href().expect("failed to get pathname");
+    let href = window.location().href().unwrap_or_default();
 
     // get encoding and url
     let mut parts = href.split('/');
-    let encoding = parts.nth(3).expect("failed to get encoding");
-    let url = web_sys::Url::new(parts.collect::<Vec<&str>>().join("/").as_str())
-        .expect("failed to parse url");
+    let encoding = parts.nth(3).unwrap_or_default();
+    let url =
+        Url::new(parts.collect::<Vec<&str>>().join("/").as_str()).expect("failed to parse url");
 
-    let object: Object = Object::new();
+    let object = Object::new();
     // set $Ocasta.location
     let _ = Reflect::set(&object, &"location".into(), &url.clone().into());
     // set $Ocasta.encoding
@@ -24,23 +28,62 @@ pub fn rewrite() {
     // set window.$Ocasta
     let _ = Reflect::set(&window, &"$Ocasta".into(), &object);
 
-    // set navigator.sendBeacon
-    let navigator = Reflect::get(&window, &"navigator".into()).expect("failed to get navigator");
-    let navigator =
-        Reflect::get(&navigator, &"sendBeacon".into()).expect("failed to get sendBeacon");
-    let send_beacon_proxy = js_sys::Proxy::new(&navigator, &js_sys::Object::new());
-    let _ = Reflect::set(&send_beacon_proxy, &"apply".into(), &js_sys::Function::new_no_args("a[0] = $Ocasta.url.encode(a[0], $Ocasta.location.origin, window.$Ocasta.encoding); return Reflect.apply(t, g, a);").into());
-    let _ = Reflect::set(&window, &"navigator".into(), &send_beacon_proxy.into());
+    // set url handlers
+    let object_clone = object.clone();
+    let url_handler_wrap = Closure::wrap(Box::new(
+        move |target: JsValue, _that: JsValue, args: JsValue| {
+            let args_array = Array::from(&args);
 
-    // set window.WebSocket
-    let web_socket = Reflect::get(&window, &"WebSocket".into()).expect("failed to get WebSocket");
-    let web_socket_proxy = js_sys::Proxy::new(&web_socket, &js_sys::Object::new());
-    let _ = Reflect::set(&web_socket_proxy, &"apply".into(), &js_sys::Function::new_no_args("a[0] = /ws/ + $Ocasta.url.encode(a[0], $Ocasta.location.origin, window.$Ocasta.encoding); return Reflect.apply(t, g, a);").into());
-    let _ = Reflect::set(&window, &"WebSocket".into(), &web_socket_proxy.into());
+            if args_array.length() > 0 {
+                let first_arg = args_array.get(0);
+                let wrapped_url = url_wrap(
+                    first_arg.as_string().unwrap_or_default(),
+                    Reflect::get(
+                        &Reflect::get(&object_clone, &"location".into()).unwrap_or_default(),
+                        &"origin".into(),
+                    )
+                    .unwrap_or_default()
+                    .as_string()
+                    .unwrap_or_default(),
+                    Reflect::get(&object_clone, &"encoding".into())
+                        .unwrap_or_default()
+                        .as_string()
+                        .unwrap_or_default(),
+                );
+
+                args_array.set(0, JsValue::from(wrapped_url));
+            }
+
+            let target_function = target.dyn_into::<Function>().unwrap();
+            let new_instance =
+                Reflect::construct(&target_function, &args_array).unwrap_or_default();
+            JsValue::from(new_instance)
+        },
+    )
+        as Box<dyn FnMut(JsValue, JsValue, JsValue) -> JsValue>);
+
+    // set window.Request
+    let request = Reflect::get(&window, &"Request".into()).unwrap_or_default();
+    if !request.is_undefined() {
+        // ctx.window.Request = new Proxy(ctx.window.Request, {
+        //     construct(target, args) {
+        //         if (args[0]) args[0] = ctx.url.wrap(args[0], { ...ctx.meta, flags: ['xhr'], })
+        //         return Reflect.construct(target, args);
+        //     },
+        // });
+        let handler = Object::new();
+        let _ = Reflect::set(
+            &handler,
+            &"construct".into(),
+            &url_handler_wrap.as_ref().into(),
+        );
+        let proxy = Proxy::new(&request, &handler);
+        let _ = Reflect::set(&window, &"Request".into(), &proxy.into());
+    }
 }
 
 #[wasm_bindgen]
-pub fn url_rewrite(url: String, origin: String, encoding: String) -> String {
+pub fn url_wrap(url: String, origin: String, encoding: String) -> String {
     let mut url = url;
 
     if url.starts_with("data:")
@@ -72,11 +115,7 @@ pub fn url_rewrite(url: String, origin: String, encoding: String) -> String {
         || url.starts_with("ws://")
         || url.starts_with("wss://");
 
-    if !origin.ends_with("/")
-        && !url.starts_with("/")
-        && !url.starts_with("http:")
-        && !url.starts_with("https:")
-    {
+    if !origin.ends_with("/") && !url.starts_with("/") && !valid_protocol {
         url = format!("/{}", url);
     }
 
@@ -89,6 +128,19 @@ pub fn url_rewrite(url: String, origin: String, encoding: String) -> String {
     url = encode(url, encoding.clone());
 
     url = format!("/{}/{}", encoding, url);
+
+    url
+}
+
+#[wasm_bindgen]
+pub fn url_unwrap(url: String, encoding: String) -> String {
+    let mut url = url;
+
+    url = url
+        .strip_prefix(format!("/{}/", encoding).as_str())
+        .unwrap_or(&url)
+        .to_string();
+    url = decode(url, encoding.clone());
 
     url
 }

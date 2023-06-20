@@ -34,11 +34,7 @@ fn get_url(el: String, origin: String, encoding: String) -> String {
         || attribute.starts_with("ws://")
         || attribute.starts_with("wss://");
 
-    if !origin.ends_with("/")
-        && !attribute.starts_with("/")
-        && !attribute.starts_with("http:")
-        && !attribute.starts_with("https:")
-    {
+    if !origin.ends_with("/") && !attribute.starts_with("/") && !valid_protocol {
         attribute = format!("/{}", attribute);
     }
 
@@ -109,21 +105,6 @@ fn html(page: String, url: reqwest::Url, encoding: String, origin: String) -> St
     let mut rewriter = HtmlRewriter::new(
         Settings {
             element_content_handlers: vec![
-                // prepend client side scripts to head
-                element!("head", |el| {
-                    let script = format!(
-                        r#"<script src="/static/wasm.js"></script>
-                        <script>window.wasmB64Encoded = "{}";</script>
-                        <script src="/static/index.js"></script>"#,
-                        b64.encode(
-                            std::fs::read("./static/wasm_bg.wasm")
-                                .expect("failed to read wasm file")
-                        )
-                    );
-
-                    let _ = el.prepend(script.as_str(), ContentType::Html);
-                    Ok(())
-                }),
                 // remove attributes that interfere with proxy
                 element!("[http-equiv]", |el| {
                     let attribute = el.get_attribute("http-equiv").unwrap_or_default();
@@ -215,7 +196,12 @@ fn html(page: String, url: reqwest::Url, encoding: String, origin: String) -> St
     rewriter.end().unwrap_or_default();
 
     let page = String::from_utf8(output).unwrap_or_default();
-    page
+    format!(
+        r#"<script data-ocasta src="/static/wasm.js"></script>
+        <script data-ocasta>const ocastaPage = "{}";</script>
+        <script data-ocasta src="/static/index.js"></script>"#,
+        encode(page, "b64".to_string())
+    )
 }
 
 pub fn encode(text: String, encoding: String) -> String {
