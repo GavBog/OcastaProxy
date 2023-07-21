@@ -2,14 +2,12 @@ use axum::{
     body::{Body, Bytes},
     extract,
     http::{HeaderMap, HeaderValue, Request, Response, StatusCode},
-    response::Html,
     routing::{any, get, post},
     Router,
 };
 use ocastaproxy::{
-    errors,
-    rewrite::{self, decode, encode},
-    websocket,
+    codec::{decode, encode},
+    errors, websocket,
 };
 use serde::Deserialize;
 use std::{collections::HashMap, net::SocketAddr};
@@ -17,10 +15,6 @@ use std::{collections::HashMap, net::SocketAddr};
 #[derive(Deserialize)]
 struct FormData {
     url: String,
-}
-
-async fn index() -> Html<&'static str> {
-    Html(include_str!("../static/index.html"))
 }
 
 async fn gateway(extract::Path(path): extract::Path<String>, body: Bytes) -> Response<Body> {
@@ -169,18 +163,9 @@ async fn proxy(
         return errors::error_response(StatusCode::BAD_REQUEST);
     };
 
-    // Rewrite
-    let new_page = rewrite::page(
-        page,
-        url,
-        encoding,
-        content_type.to_str().unwrap_or("").to_string(),
-        origin,
-    );
-
     response_headers.insert(
         "content-length",
-        if let Ok(content_length) = HeaderValue::from_str(&new_page.len().to_string()) {
+        if let Ok(content_length) = HeaderValue::from_str(&page.len().to_string()) {
             content_length
         } else {
             return errors::error_response(StatusCode::BAD_REQUEST);
@@ -190,14 +175,13 @@ async fn proxy(
     let mut res = Response::default();
     *res.status_mut() = status;
     *res.headers_mut() = response_headers;
-    *res.body_mut() = new_page.into();
+    *res.body_mut() = page.into();
     res
 }
 
 #[tokio::main]
 async fn main() {
     let app = Router::new()
-        .route("/", get(index))
         .route("/:encoding/gateway", post(gateway))
         .route("/:encoding/*url", any(proxy))
         .route("/ws/:encoding/*url", get(websocket::proxy));
